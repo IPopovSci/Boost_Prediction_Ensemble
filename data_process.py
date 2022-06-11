@@ -7,7 +7,7 @@ import ta
 from datetime import timezone, datetime, timedelta
 import pytz
 
-#pd.set_option('display.max_rows', None)
+pd.set_option('display.max_columns', None)
 
 est = pytz.timezone('US/Eastern')
 utc = pytz.utc
@@ -51,6 +51,8 @@ Returns: Dataframe'''
 def add_info(df):
     windows = [48,24, 12, 8, 6, 4, 3, 1]
 
+
+
     for col in df.columns:
         if 'Pred' in col:
             numeric_filter = filter(str.isdigit, col)
@@ -60,18 +62,30 @@ def add_info(df):
             window_index = windows.index(numeric_string)
             #print(window_index)
 
-            df[f'change_{numeric_string}h'] = df['price'].pct_change(numeric_string, axis=0).shift(-numeric_string) #Create lagged returns
+            #df[f'change_{numeric_string}h'] = df['price'].pct_change(numeric_string, axis=0).shift(-numeric_string) #Create lagged returns
+            #Not sure if we need this, this won't be avaliable for predicting anyways! Will need 48h for regression, create separately
 
             for window in windows[window_index:]:
                 df[f'{window}_MA_{numeric_string}h'] = df[col].rolling(window=window).mean()
+    df['Hour'] = df.index.hour
+    df['DayWeek'] = df.index.dayofweek
+    # print(df['Hour'])
+    # print(df['DayWeek'])
+    #print(df.head(n=10))
     return df
 
 '''Splits dataframe into x and y variables
 We are only interested in 48h returns, as being most statistically significant to our model performance'''
-def x_y_split(df):
+def x_y_split_regression(df):
     df_y = df['change_48h']
 
     df_x = df.drop(['change_48h'],axis=1)
+    return df_x,df_y
+
+def x_y_split_categorical(df):
+    df_y = df['Signal']
+
+    df_x = df.drop(['Signal'],axis=1)
     return df_x,df_y
 
 '''Percent based train/test split
@@ -124,6 +138,8 @@ def ohlcv_add_info(df):
     df['volume_48h'] = df['volume'].rolling(min_periods=1, window=48).sum()
     df['low_48h'] = df['low'].rolling(min_periods=1, window=48).sum()
     df['high_48h'] = df['high'].rolling(min_periods=1, window=48).sum()
+
+
     return df
 
 def add_ta(ticker_data):
@@ -133,7 +149,7 @@ def add_ta(ticker_data):
     return df
 
 
-def pipeline_extra(split_percent,pair,periods):
+def pipeline_extra(split_percent,pair,periods,type='categorical'):
     df_preds = load_csv_round_index()
     df_preds = add_info(df_preds)
 
@@ -144,7 +160,11 @@ def pipeline_extra(split_percent,pair,periods):
     df=pd.merge(df_preds,df_apidata, how='inner', left_index=True,right_index=True)
     df.fillna(value=0,inplace=True)
 
-    df_x,df_y = x_y_split(df)
+    if type == 'regression':
+
+        df_x,df_y = x_y_split_regression(df)
+    elif type == 'categorical':
+        df_x, df_y = x_y_split_categorical(df)
     df_x_train,df_x_test,df_y_train,df_y_test = train_test_split(df_x,df_y,split_percent)
     return df_x_train, df_x_test, df_y_train, df_y_test
 

@@ -1,7 +1,7 @@
 from sklearn.model_selection import GridSearchCV
 import pandas as pd
 import numpy as np
-
+import sklearn
 import xgboost as xgb
 import pandas as pd
 import numpy as np
@@ -14,16 +14,32 @@ from sklearn.metrics import make_scorer
 from sklearn.datasets import make_regression
 from sklearn.model_selection import RepeatedKFold
 from sklearn.feature_selection import SelectKBest
-from sklearn.feature_selection import mutual_info_regression
+from sklearn.feature_selection import mutual_info_regression,f_classif,mutual_info_classif
 from sklearn.linear_model import LinearRegression
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import GridSearchCV
+from xgboost import XGBClassifier
+from sklearn.metrics import accuracy_score
+from matplotlib import pyplot
+from sklearn.feature_selection import SelectFromModel
+from xgboost import plot_importance
 
 '''Module to search for optimal hyper-parameters, uses GridSearchCV'''
 
 Path = Path.cwd() / 'Data'
 
-def xb_hp_tune():
+def select_features(X_train, y_train, X_test,k):
+	# configure to select a subset of features
+	fs = SelectKBest(score_func=f_classif, k=k)
+	# learn relationship from training data
+	fs.fit(X_train, y_train)
+	# transform train input data
+	X_train_fs = fs.transform(X_train)
+	# transform test input data
+	X_test_fs = fs.transform(X_test)
+	return X_train_fs, X_test_fs, fs
+
+def xb_hp_tune_regression():
     df_x_train,df_x_test,df_y_train,df_y_test = pipeline_extra(split_percent=0.9)
 
     param_grid = {"max_depth":    [10,12,15,20,25],
@@ -33,27 +49,49 @@ def xb_hp_tune():
 
     regressor=xgb.XGBRegressor(obj=assymetric_mse_train)
 
-    search = GridSearchCV(regressor, param_grid, cv=5,scoring=make_scorer(assymetric_mse_sklearn)).fit(df_x_train, df_y_train)
+    search = GridSearchCV(regressor, param_grid, cv=5,scoring=make_scorer(assymetric_mse_sklearn,greater_is_better=False)).fit(df_x_train, df_y_train)
+
+    print("The best hyperparameters are ",search.best_params_) #The best hyperparameters are  {'learning_rate': 0.6, 'max_depth': 2, 'n_estimators': 800}
+
+def xb_hp_tune_classification():
+    df_x_train,df_x_test,df_y_train,df_y_test = pipeline_extra(0.8,'btcusd','1h')
+
+    X_train_fs, X_test_fs, fs = select_features(df_x_train,df_y_train,df_x_test,k=30)
+
+    param_grid = {"max_depth":    [15],
+                  "n_estimators": [50],
+                  "learning_rate": [1],'gamma':[0],"reg_alpha": [0.025],"reg_lambda":[1]}
+
+    cv = RepeatedKFold(n_splits=10, n_repeats=3,random_state=1337)
+    scorer = sklearn.metrics.make_scorer(sklearn.metrics.f1_score, average='weighted')
+    scoring = {"AUC": "roc_auc", "Accuracy": make_scorer(accuracy_score),'f1 score':sklearn.metrics.make_scorer(sklearn.metrics.f1_score, average='weighted')}
+
+
+    regressor=xgb.XGBClassifier(num_class=3,objective='multi:softmax',eval_metric='mlogloss')
+
+    search = GridSearchCV(regressor, param_grid, cv=cv,scoring=scorer).fit(X_train_fs, df_y_train)
 
     print("The best hyperparameters are ",search.best_params_) #The best hyperparameters are  {'learning_rate': 0.6, 'max_depth': 2, 'n_estimators': 800}
 
 def xb_feature_count_tune():
-    df_x_train, df_x_test, df_y_train, df_y_test = pipeline_extra(1,'btcusd','1h')
+    df_x_train, df_x_test, df_y_train, df_y_test = pipeline_extra(0.8,'btcusd','1h')
 
-    cv = RepeatedKFold(n_splits=10, n_repeats=3, random_state=1)
-    # define the pipeline to evaluate
-    model = xgb.XGBRegressor(obj=assymetric_mse_train)
-    fs = SelectKBest(score_func=mutual_info_regression)
+    model = xgb.XGBClassifier(num_class=3, objective='multi:softmax',
+                                  eval_metric='mlogloss')
+    fs = SelectKBest(score_func=f_classif)
+    cv = RepeatedKFold(n_splits=10, n_repeats=3)
     pipeline = Pipeline(steps=[('sel', fs), ('lr', model)])
     # define the grid
     grid = dict()
-    grid['sel__k'] = [i for i in range(85, 106)]
+    grid['sel__k'] = [119,100,90,80,70,60,50,40,30] #30
     # define the grid search
-    search = GridSearchCV(pipeline, grid, scoring=make_scorer(assymetric_mse_sklearn,greater_is_better=False), n_jobs=-1, cv=cv)
+    scorer = sklearn.metrics.make_scorer(sklearn.metrics.f1_score, average='weighted')
+
+    search = GridSearchCV(pipeline, grid, scoring=scorer, n_jobs=-1, cv=cv)
     # perform the search
     results = search.fit(df_x_train, df_y_train)
     # summarize best
-    print('Best AMSE: %.8f' % results.best_score_)
+    print('Best f1: %.8f' % results.best_score_)
     print('Best Config: %s' % results.best_params_)
     # summarize all
     means = results.cv_results_['mean_test_score']
@@ -61,4 +99,17 @@ def xb_feature_count_tune():
     for mean, param in zip(means, params):
         print(">%.8f with: %r" % (mean, param))
 
-xb_feature_count_tune()
+def xgboost_test_classification():
+    df_x_train, df_x_test, df_y_train, df_y_test = pipeline_extra(0.5, 'btcusd', '1h')
+
+    #scorer = sklearn.metrics.f1_score()
+    print(df_y_train)
+    model = XGBClassifier(n_estimators=1000,max_depth=20,num_class=3)
+    model.fit(df_x_train, df_y_train)
+    # make predictions for test data
+    y_pred = model.predict(df_x_test)
+    plot_importance(model)
+    pyplot.show()
+
+xb_hp_tune_classification()
+#xb_feature_count_tune()

@@ -1,3 +1,3 @@
-from x_regression import boost_ta
+from x_regression import boost_ta_classification
 
-boost_ta()
+boost_ta_classification()
