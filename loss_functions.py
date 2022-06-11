@@ -10,9 +10,17 @@ def assymetric_mse_train(y_true,y_pred):
 
     sign = np.sign(np.divide(y_true,y_pred))
     residual = y_true - y_pred
+    ratio = np.divide(y_pred, y_true)
 
     grad = np.where(sign<0,-2.0 * alpha * residual,-2.0*residual)
+    # grad_2 = np.where(np.greater_equal(np.abs(ratio), 1.), (1/residual**2), residual)
+    #
+    # grad = grad_1 + grad_2
+
     hess = np.where(sign<0,2.0*alpha,2.0)
+    # hess_2 = np.where(np.greater_equal(np.abs(ratio), 1.), (-2/residual**3), 1.0)
+    #
+    # hess = hess_1 + hess_2
     return grad, hess
 
 '''Assymetrical MSE function for use in sklearn

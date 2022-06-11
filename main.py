@@ -1,2 +1,3 @@
-'''Run x_regression to fit and predict on data
-Run paramter_tune to fit parameters'''
+from x_regression import boost_ta
+
+boost_ta()
