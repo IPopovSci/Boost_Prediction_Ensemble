@@ -1,11 +1,9 @@
-import pandas as pd
-import numpy as np
 from pathlib import Path
-from datetime import datetime
 import cryptowatch as cw
-import ta
-from datetime import timezone, datetime, timedelta
+import numpy as np
+import pandas as pd
 import pytz
+import ta
 
 pd.set_option('display.max_columns', None)
 
@@ -13,92 +11,119 @@ est = pytz.timezone('US/Eastern')
 utc = pytz.utc
 fmt = '%d/%m/%Y %H:%M:%S'
 
-
-#PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION='python'
 '''Module to work with data'''
 
-Path = Path.cwd() / 'Data' #Grabs data path based on current working directory
+Path = Path.cwd() / 'Data'  # Grabs data path based on current working directory
 
-'''Loads csv file and gets rid of old index'''
-def load_csv():
-    df = pd.read_csv(f'{Path}/results.csv',index_col='time', encoding='utf8')
-    df = df.iloc[:,1:] #Gets rid of existing index column
+'''Loads csv file and gets rid of old index
+Has 2 modes: Either a file with predictions from another model/network called results.csv or
+An OHLCV csv containing ticker information, with column names [time,open,high,low,close,volume]
+If loading OHLCV ticker information, expected time format is Unix time (ms)
+For OHLCV dataset, the expected candle interval is 1h
+For results.csv file, time is expected to be in hourly intervals in US/Eastern timezone
+'''
+
+
+def load_csv(name='results.csv'):
+    df = pd.read_csv(f'{Path}/{name}')
+
+    if name == 'results.csv':
+        df = df.iloc[:, 1:]  # Gets rid of existing index column
+        df['time'] = pd.to_datetime(df['time'], dayfirst=True).round('60min')
+        df.set_index('time', inplace=True)
+        df.index = df.index.tz_localize("US/Eastern").tz_convert(utc)
+
+    if name != 'results.csv':
+        df = df
+        df['time'] = pd.to_datetime(df['time'], unit='ms', dayfirst=True, utc=True)  # Unix to datetime conversion
+
+        ohlcv = {
+            'open': 'first',
+            'high': 'max',
+            'low': 'min',
+            'close': 'last',
+            'volume': 'sum'
+        }
+        df.set_index('time', inplace=True)
+
+        df = df.resample(rule='1h', offset=0).apply(ohlcv)
+
+        df.dropna(inplace=True)
+        df.index = pd.to_datetime(df.index, format='%d/%m/%Y %H:%M:%S', )
+
     return df
 
-'''Separate loading of predictions
-Rounds the time to the nearest hour, to align with cryptowatch API time'''
-def load_csv_round_index():
-    df = pd.read_csv(f'{Path}/results.csv')
-    df = df.iloc[:,1:] #Gets rid of existing index column
 
-    df['time'] = pd.to_datetime(df['time'],dayfirst=True).round('60min')
-    #print(df['time'])
-    df.set_index('time', inplace=True)
-
-    df.index = df.index.tz_localize("US/Eastern").tz_convert(utc)
-    #print(df.index)
-
-    #df.index = df.index.strftime('%d/%m/%Y %H:%M:%S')
-    #print(df.iloc[-1,:])
-    #print(df.index)
-    return df
-
-
-'''Adds moving averages and lagged returns to the dataframe
+'''Adds moving averages for predictions 
 Accepts: Dataframe w/ prediction columns (Must have Pred in name)
-Returns: Dataframe'''
+lagged: True/False argument to add lagged returns
+Returns: Dataframe
+Only for prediction ensembling use'''
+
 
 def add_info(df):
-    windows = [48,24, 12, 8, 6, 4, 3, 1]
-
-
+    windows = [48, 24, 12, 8, 6, 4, 3, 1]
 
     for col in df.columns:
         if 'Pred' in col:
             numeric_filter = filter(str.isdigit, col)
             numeric_string = int("".join(numeric_filter))
-            print(numeric_string)
 
             window_index = windows.index(numeric_string)
-            #print(window_index)
-
-            #df[f'change_{numeric_string}h'] = df['price'].pct_change(numeric_string, axis=0).shift(-numeric_string) #Create lagged returns
-            #Not sure if we need this, this won't be avaliable for predicting anyways! Will need 48h for regression, create separately
 
             for window in windows[window_index:]:
                 df[f'{window}_MA_{numeric_string}h'] = df[col].rolling(window=window).mean()
-    df['Hour'] = df.index.hour
-    df['DayWeek'] = df.index.dayofweek
-    # print(df['Hour'])
-    # print(df['DayWeek'])
-    #print(df.head(n=10))
+
     return df
 
-'''Splits dataframe into x and y variables
-We are only interested in 48h returns, as being most statistically significant to our model performance'''
-def x_y_split_regression(df):
-    df_y = df['change_48h']
 
-    df_x = df.drop(['change_48h'],axis=1)
-    return df_x,df_y
+'''Splits dataframe into x and y variables for regression on lagged interval
+Accepts: Dataframe, Lag target (String)
+Returns: Dataframe'''
+
+
+def x_y_split_regression(df, lag='48'):
+    df_y = df[f'change_{lag}h']
+
+    df_x = df.drop([f'change_{lag}h'], axis=1)
+    return df_x, df_y
+
+
+'''Splits dataframe into x and y variables for classification on signal.
+Accepts: Dataframe
+Returns: Dataframe'''
+
 
 def x_y_split_categorical(df):
-    df_y = df['Signal']
+    df_y = pd.Series(df['Signal'], name='Signal')
 
-    df_x = df.drop(['Signal'],axis=1)
-    return df_x,df_y
+    df_x = df.drop(['Signal'], axis=1)
+    return df_x, df_y
+
 
 '''Percent based train/test split
 Accepts: Dataframes for x and y data, percent of data to split (float)
 Returns: Dataframes for training and testing, for both x and y'''
-def train_test_split(df_x,df_y,split_percent):
-    df_x_train = df_x.iloc[:int(split_percent*len(df_x))]
-    df_x_test = df_x.iloc[int(split_percent*len(df_x)):]
 
-    df_y_train = df_y.iloc[:int(split_percent*len(df_x))]
-    df_y_test = df_y.iloc[int(split_percent*len(df_x)):]
 
-    return df_x_train,df_x_test,df_y_train,df_y_test
+def train_test_split(df_x, df_y, split_percent):
+    df_x_train = df_x.iloc[:int(split_percent * len(df_x))]
+    df_x_test = df_x.iloc[int(split_percent * len(df_x)):]
+
+    df_y_train = pd.Series(df_y.iloc[:int(split_percent * len(df_y))])
+    df_y_test = pd.Series(df_y.iloc[int(split_percent * len(df_y)):])
+
+    return df_x_train, df_x_test, df_y_train, df_y_test
+
+
+'''Module for retrieving the last 1000 OHCLV candles of a ticker
+Will convert the time column into UTC Datetime Index
+Accepts:
+Pair: Ticker to use
+Periods: Time interval for tickers
+
+Returns: OHLCV Dataframe'''
+
 
 def cryptowatch_data(pair, periods):
     cw.api_key = 'LZKL7ULRG322Z0793KU3'
@@ -121,26 +146,53 @@ def cryptowatch_data(pair, periods):
     df.rename(columns={'volume_a': 'volume', 'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close'},
               inplace=True)
 
-    df['time'] = pd.to_datetime(df['time'], unit='s')#.dt.strftime('%d/%m/%Y %H:%M:%S') # Unix to datetime conversion
+    df['time'] = pd.to_datetime(df['time'], unit='s')  # Unix to datetime conversion
 
-    #print(type(df['time']))
     df.set_index('time', inplace=True)
     df.index = df.index.tz_localize("utc")
 
-    #print(df.index)
-    #df.index = df.index.strftime('%d/%m/%Y %H:%M:%S')
+    return df
+
+
+'''Feature augmentation function
+Adds sums of OHLCV candles over several periods to create new features
+if lagged=True will create lagged returns based on lag_list
+if signal=True will create buy (1) or sell (0) signal for 48 hour lagged returns
+Don't use both, as this will cause a data leak
+
+Additionally adds Hour and Dayweek columns, which indicate hour of the day, and numeric day of the week feature
+Accepts: Dataframe
+Returns: Dataframe'''
+
+
+def ohlcv_add_info(df, lagged=False, signal=True):
+    num_list = [48, 42, 38, 32]
+    lag_list = [48, 24, 12, 4, 1]
+
+    for num in num_list:
+        df[f'open_{num}h'] = df['open'].rolling(min_periods=1, window=num).sum()
+        df[f'close_{num}h'] = df['close'].rolling(min_periods=1, window=num).sum()
+        df[f'volume_{num}h'] = df['volume'].rolling(min_periods=1, window=num).sum()
+        df[f'low_{num}h'] = df['low'].rolling(min_periods=1, window=num).sum()
+        df[f'high_{num}h'] = df['high'].rolling(min_periods=1, window=num).sum()
+
+    if lagged:
+        for interval in lag_list:
+            df[f'change_{interval}h'] = df['close'].pct_change(interval, axis=0).shift(
+                -interval)  # Create lagged returns
+    if signal:
+        df.insert(loc=0, value=(np.where(df['close'].pct_change(periods=48).shift(-48) > 0., 1, 0)), column='Signal')
+
+    df['Hour'] = df.index.hour
+    df['DayWeek'] = df.index.dayofweek
 
     return df
 
-def ohlcv_add_info(df):
-    df['open_48h'] = df['open'].rolling(min_periods=1, window=48).sum()
-    df['close_48h'] = df['close'].rolling(min_periods=1, window=48).sum()
-    df['volume_48h'] = df['volume'].rolling(min_periods=1, window=48).sum()
-    df['low_48h'] = df['low'].rolling(min_periods=1, window=48).sum()
-    df['high_48h'] = df['high'].rolling(min_periods=1, window=48).sum()
 
+'''Adds technical analysis
+Accepts: Dataframe with OHLCV columns
+Returns: Dataframe with technical analysis features'''
 
-    return df
 
 def add_ta(ticker_data):
     df = ta.add_all_ta_features(ticker_data, open=f"open", high=f"high", low=f"low", close=f"close", volume=f"volume",
@@ -149,24 +201,42 @@ def add_ta(ticker_data):
     return df
 
 
-def pipeline_extra(split_percent,pair,periods,type='categorical'):
-    df_preds = load_csv_round_index()
+'''Pipeline function
+Builds the required data
+Accepts:
+split_percent: float, how much data to use for fit/prediction, % wise
+pair: currency pair (string)
+type: categorical/regression data preparation
+csv_name: Csv to load in addition to cryptowatch API
+
+Returns: Train/Test data for x and y'''
+
+
+def pipeline_extra(split_percent, pair, periods, type='categorical', csv_name='results.csv'):
+    df_preds = load_csv(name=f'{csv_name}')
     df_preds = add_info(df_preds)
+    df_preds.reset_index(inplace=True)
 
-    df_apidata = cryptowatch_data(pair,periods)
-    df_apidata = ohlcv_add_info(df_apidata)
-    df_apidata = add_ta(df_apidata)
+    df_apidata = cryptowatch_data(pair, periods)
+    df_apidata.reset_index(inplace=True)
 
-    df=pd.merge(df_preds,df_apidata, how='inner', left_index=True,right_index=True)
-    df.fillna(value=0,inplace=True)
+    df = df_apidata.append(df_preds).drop_duplicates(subset='time').sort_values('time')
+
+    df.set_index(df['time'], inplace=True, drop=True)
+    del df['time']
+
+    if type == 'categorical':
+        df = ohlcv_add_info(df, lagged=False, signal=True)
+    elif type == 'regression':
+        df = ohlcv_add_info(df, lagged=True, signal=False)
+
+    df = add_ta(df)
+    df.fillna(value=0, inplace=True)
 
     if type == 'regression':
-
-        df_x,df_y = x_y_split_regression(df)
+        df_x, df_y = x_y_split_regression(df)
     elif type == 'categorical':
         df_x, df_y = x_y_split_categorical(df)
-    df_x_train,df_x_test,df_y_train,df_y_test = train_test_split(df_x,df_y,split_percent)
+
+    df_x_train, df_x_test, df_y_train, df_y_test = train_test_split(df_x, df_y, split_percent)
     return df_x_train, df_x_test, df_y_train, df_y_test
-
-
-#Add borutashape feature selection after we figure out xgboost
