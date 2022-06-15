@@ -166,15 +166,15 @@ Returns: Dataframe'''
 
 
 def ohlcv_add_info(df, lagged=False, signal=True):
-    num_list = [48, 42, 38, 32]
+    sum_periods = [48, 42, 38, 32]
     lag_list = [48, 24, 12, 4, 1]
 
-    for num in num_list:
-        df[f'open_{num}h'] = df['open'].rolling(min_periods=1, window=num).sum()
-        df[f'close_{num}h'] = df['close'].rolling(min_periods=1, window=num).sum()
-        df[f'volume_{num}h'] = df['volume'].rolling(min_periods=1, window=num).sum()
-        df[f'low_{num}h'] = df['low'].rolling(min_periods=1, window=num).sum()
-        df[f'high_{num}h'] = df['high'].rolling(min_periods=1, window=num).sum()
+    for period in sum_periods:
+        df[f'open_{period}h'] = df['open'].rolling(min_periods=1, window=period).sum()
+        df[f'close_{period}h'] = df['close'].rolling(min_periods=1, window=period).sum()
+        df[f'volume_{period}h'] = df['volume'].rolling(min_periods=1, window=period).sum()
+        df[f'low_{period}h'] = df['low'].rolling(min_periods=1, window=period).sum()
+        df[f'high_{period}h'] = df['high'].rolling(min_periods=1, window=period).sum()
 
     if lagged:
         for interval in lag_list:
