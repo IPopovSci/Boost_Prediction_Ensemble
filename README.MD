@@ -38,6 +38,7 @@ Cryptowatch API data is used to receive most up to date data, and joined with se
 * Cryptowatch API
 
 ### Setup
+Before running, assign your Cryptowatch API key in cryptowatch_data function in data_process.py
 
 To run, clone the repository and launch one of the following from main.py:
 

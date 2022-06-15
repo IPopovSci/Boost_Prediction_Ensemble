@@ -126,7 +126,7 @@ Returns: OHLCV Dataframe'''
 
 
 def cryptowatch_data(pair, periods):
-    cw.api_key = 'LZKL7ULRG322Z0793KU3'
+    cw.api_key = "Your_key_goes_here"
 
     # Sometimes data from Kaggle has different pair differentiator, need to implement custom swaps.
     if pair == 'btcusd':
