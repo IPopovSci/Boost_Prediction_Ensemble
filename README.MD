@@ -1,4 +1,4 @@
-# Crypto_deeplearning_study
+# Boost_Prediction_Ensemble
 
 This project uses XGBoost to perform classification/regression on outside predictions or original OHLCV data for cryptocurrency market data.
 
@@ -66,5 +66,3 @@ Make sure to modify xb_tuner() function in parameter_tune.py to include required
 ### Author
 
 Created by Ivan Popov
-
-Organisational help by Alon Rodovinsky
