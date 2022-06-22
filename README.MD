@@ -43,12 +43,14 @@ Before running, assign your Cryptowatch API key in cryptowatch_data function in 
 To run, clone the repository and launch one of the following from main.py:
 
 boost_ta_regression() or boost_ta_classification()
+
 Required parameters: 
 csv_name - Either results.csv for ensembling outside predictions or crypto-pair.csv for custom cryptocurrency pair
 k - number of best features to use
 Make sure your loaded CSVs have dates within last 1000 hour, otherwise this will result in a date gap (Cryptowatch only returns last 1000 hours)
 
 for tuning, run xb_tuner()
+
 Required parameters:
 type - regression or categorical
 csv_name - Either results.csv for ensembling outside predictions or crypto-pair.csv for custom cryptocurrency pair
