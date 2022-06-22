@@ -49,7 +49,7 @@ csv_name - Either results.csv for ensembling outside predictions or crypto-pair.
 k - number of best features to use
 Make sure your loaded CSVs have dates within last 1000 hour, otherwise this will result in a date gap (Cryptowatch only returns last 1000 hours)
 
-for tuning, run xb_tuner()
+For tuning, run xb_tuner()
 
 Required parameters:
 type - regression or categorical
